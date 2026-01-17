@@ -12,6 +12,7 @@ import MisPedidos from './pages/MisPedidos';
 import DetallePedido from './pages/DetallePedido';
 import SobreNosotros from './pages/SobreNosotros';
 import Contacto from './pages/Contacto';
+import ProductosPage from './pages/ProductosPage';
 import { useAuth } from './context/AuthContext';
 import { CartProvider } from './context/CartContext';
 import './App.css';
@@ -45,6 +46,7 @@ function App() {
         <Routes>
           {/* Rutas públicas */}
           <Route path="/" element={<Home />} />
+          <Route path="/productos" element={<ProductosPage />} />
           <Route path="/producto/:slug" element={<ProductDetailNew />} />
           <Route path="/categoria/:slug" element={<CategoriaPage />} />
           <Route path="/carrito" element={<CarritoPage />} />

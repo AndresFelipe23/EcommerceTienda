@@ -11,6 +11,8 @@ import type { CategoriaArbol } from '../services/categoria.service';
 import type { Banner } from '../services/banner.service';
 import { getImageUrl } from '../utils/image.utils';
 import { promocionService, type PromocionAplicable } from '../services/promocion.service';
+import BannerPromocional from '../components/BannerPromocional';
+import PromocionDestacada from '../components/PromocionDestacada';
 import Slider from 'react-slick';
 import 'slick-carousel/slick/slick.css';
 import 'slick-carousel/slick/slick-theme.css';
@@ -19,6 +21,8 @@ export default function Home() {
   const [productos, setProductos] = useState<ProductoResumen[]>([]);
   const [categorias, setCategorias] = useState<CategoriaArbol[]>([]);
   const [banners, setBanners] = useState<Banner[]>([]);
+  const [bannersPromocion, setBannersPromocion] = useState<Banner[]>([]);
+  const [promocionesDestacadas, setPromocionesDestacadas] = useState<PromocionAplicable[]>([]);
   const [tiendaInfo, setTiendaInfo] = useState<{ 
     nombre?: string; 
     email?: string; 
@@ -69,14 +73,15 @@ export default function Home() {
 
         // Cargar productos
         const productosResponse = await productoService.listar();
+        let productosLista: ProductoResumen[] = [];
+        let promocionesMap = new Map<string, PromocionAplicable>();
+        
         if (productosResponse.exito && productosResponse.datos) {
-          const productosLista = productosResponse.datos.items || [];
+          productosLista = productosResponse.datos.items || [];
           setProductos(productosLista);
 
           // Cargar promociones para los productos (individualmente para verificar correctamente)
           if (productosLista.length > 0) {
-            const promocionesMap = new Map<string, PromocionAplicable>();
-            
             // Verificar promociones para cada producto individualmente
             await Promise.all(
               productosLista.map(async (producto) => {
@@ -95,15 +100,60 @@ export default function Home() {
           }
         }
 
-        // Cargar banners
-        try {
-          const bannersResponse = await bannerService.listarVigentes();
-          if (bannersResponse.exito && bannersResponse.datos) {
-            const bannersOrdenados = bannersResponse.datos.sort((a, b) => a.orden - b.orden);
-            setBanners(bannersOrdenados);
+        // Cargar banners (Superior - carousel principal)
+        const bannersResponse = await bannerService.listarVigentes();
+        let bannersMedioCargados: Banner[] = [];
+        
+        if (bannersResponse.exito && bannersResponse.datos) {
+          const bannersOrdenados = bannersResponse.datos.sort((a, b) => a.orden - b.orden);
+          // Separar banners por posición (case-insensitive)
+          const bannersSuperior = bannersOrdenados.filter(b => 
+            !b.posicion || b.posicion.toLowerCase() === 'superior'
+          );
+          bannersMedioCargados = bannersOrdenados.filter(b => 
+            b.posicion && b.posicion.toLowerCase() === 'medio'
+          );
+          setBanners(bannersSuperior);
+        }
+
+        // Si no se encontraron banners de posición "Medio", intentar cargarlos directamente
+        // Intentar con diferentes variaciones de mayúsculas/minúsculas
+        if (bannersMedioCargados.length === 0) {
+          const variacionesPosicion = ['Medio', 'medio', 'MEDIO', 'Medio '];
+          for (const posicion of variacionesPosicion) {
+            const bannersMedioResponse = await bannerService.obtenerActivosPorPosicion(posicion);
+            if (bannersMedioResponse.exito && bannersMedioResponse.datos && bannersMedioResponse.datos.length > 0) {
+              bannersMedioCargados = bannersMedioResponse.datos.sort((a, b) => a.orden - b.orden);
+              break; // Si encontramos banners, salir del loop
+            }
           }
-        } catch (error) {
-          // Error al cargar banners
+        }
+
+        // Establecer banners promocionales si se encontraron
+        setBannersPromocion(bannersMedioCargados);
+      }
+      
+      // Cargar promociones activas para mostrar en el espacio promocional (después de cargar productos)
+      const promocionesResponse = await promocionService.listarActivas();
+      if (promocionesResponse.exito && promocionesResponse.datos && promocionesResponse.datos.length > 0) {
+        // Filtrar promociones que aplican a "Todo", "Productos" o "Categorias"
+        const promocionesParaMostrar = promocionesResponse.datos
+          .filter(p => p.aplicarA === 'Todo' || p.aplicarA === 'Productos' || p.aplicarA === 'Categorias')
+          .slice(0, 2); // Mostrar máximo 2 promociones
+        
+        if (promocionesParaMostrar.length > 0) {
+          // Convertir a PromocionAplicable para el componente
+          const promocionesAplicables: PromocionAplicable[] = promocionesParaMostrar.map(p => ({
+            promId: p.promId,
+            nombre: p.nombre,
+            tipo: p.tipo,
+            aplicarA: p.aplicarA,
+            valorDescuento: p.valorDescuento,
+            montoMaximoDescuento: p.montoMaximoDescuento,
+            fechaFin: p.fechaFin
+          }));
+          
+          setPromocionesDestacadas(promocionesAplicables);
         }
       }
     } catch (error) {
@@ -264,6 +314,15 @@ export default function Home() {
       {categoriasPadre.length > 0 && (
         <section className="py-20 bg-white">
           <div className="container mx-auto px-4">
+            {/* Header Section */}
+            <div className="mb-12 text-center">
+              <h3 className="text-4xl md:text-5xl font-bold text-gray-900 mb-3">
+                Categorías
+              </h3>
+              <p className="text-lg text-gray-600 max-w-2xl mx-auto">
+                Explora nuestras categorías y encuentra lo que buscas
+              </p>
+            </div>
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
               {categoriasPadre.map((categoria, index) => (
                 <div key={categoria.catId} className="relative group overflow-hidden rounded-lg">
@@ -297,6 +356,53 @@ export default function Home() {
                 </div>
               ))}
             </div>
+          </div>
+        </section>
+      )}
+
+      {/* Promociones Destacadas - Entre Categorías y Productos */}
+      {promocionesDestacadas.length > 0 && (
+        <section className="py-12 bg-gray-50">
+          <div className="container mx-auto px-4">
+            {promocionesDestacadas.length === 1 ? (
+              <PromocionDestacada 
+                promocion={{
+                  ...promocionesDestacadas[0],
+                  descripcion: undefined,
+                  fechaInicio: undefined
+                } as any} 
+              />
+            ) : (
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                {promocionesDestacadas.map((promocion) => (
+                  <PromocionDestacada 
+                    key={promocion.promId} 
+                    promocion={{
+                      ...promocion,
+                      descripcion: undefined,
+                      fechaInicio: undefined
+                    } as any} 
+                  />
+                ))}
+              </div>
+            )}
+          </div>
+        </section>
+      )}
+      
+      {/* Banner Promocional - Fallback si no hay promociones */}
+      {promocionesDestacadas.length === 0 && bannersPromocion && bannersPromocion.length > 0 && (
+        <section className="py-12 bg-gray-50">
+          <div className="container mx-auto px-4">
+            {bannersPromocion.length === 1 ? (
+              <BannerPromocional banner={bannersPromocion[0]} />
+            ) : (
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                {bannersPromocion.map((banner) => (
+                  <BannerPromocional key={banner.banId} banner={banner} />
+                ))}
+              </div>
+            )}
           </div>
         </section>
       )}
