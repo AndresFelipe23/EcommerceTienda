@@ -108,6 +108,10 @@ export interface ProductoResumen {
   activo: boolean;
   imagenPrincipal?: string;
   categoriaId: string;
+  stockTotal?: number;
+  stockDisponible?: number;
+  cantidadVariantes?: number;
+  stockEstado?: string; // "EnStock", "StockBajo", "SinStock", "NoAplica"
 }
 
 export interface PagedResponse<T> {

@@ -7,6 +7,9 @@ import Registro from './pages/Registro';
 import MiCuenta from './pages/MiCuenta';
 import CarritoPage from './pages/CarritoPage';
 import CheckoutPage from './pages/CheckoutPage';
+import CheckoutExito from './pages/CheckoutExito';
+import CheckoutFallo from './pages/CheckoutFallo';
+import CheckoutPendiente from './pages/CheckoutPendiente';
 import ListaDeseosPage from './pages/ListaDeseosPage';
 import MisPedidos from './pages/MisPedidos';
 import DetallePedido from './pages/DetallePedido';
@@ -52,6 +55,9 @@ function App() {
           <Route path="/carrito" element={<CarritoPage />} />
           <Route path="/sobre-nosotros" element={<SobreNosotros />} />
           <Route path="/contacto" element={<Contacto />} />
+          <Route path="/checkout/exito" element={<CheckoutExito />} />
+          <Route path="/checkout/fallo" element={<CheckoutFallo />} />
+          <Route path="/checkout/pendiente" element={<CheckoutPendiente />} />
           
           {/* Rutas de autenticación (siempre disponibles) */}
           <Route path="/login" element={<Login />} />

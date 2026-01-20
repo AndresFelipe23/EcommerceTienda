@@ -8,6 +8,23 @@ export interface Tienda {
   descripcion?: string;
   dominio?: string;
   logoUrl?: string;
+  // Información de contacto
+  telefono?: string;
+  email?: string;
+  whatsapp?: string;
+  // Dirección física
+  direccion?: string;
+  ciudad?: string;
+  estado?: string;
+  codigoPostal?: string;
+  pais?: string;
+  latitud?: number;
+  longitud?: number;
+  // Información legal/fiscal
+  nit?: string;
+  razonSocial?: string;
+  representanteLegal?: string;
+  configuracionJson?: string;
   activo: boolean;
 }
 
@@ -39,13 +56,22 @@ export const tiendaService = {
     
     // Fallback: obtener todas las tiendas activas y usar la primera
     // (útil para desarrollo local)
-    const response = await apiService.get<Tienda[]>(API_ENDPOINTS.tiendas.activas);
+    const responseActivas = await apiService.get<Tienda[]>(API_ENDPOINTS.tiendas.activas);
     
-    if (response.exito && response.datos && response.datos.length > 0) {
-      // Retornar la primera tienda activa (en producción sería la resuelta por dominio)
+    if (responseActivas.exito && responseActivas.datos && responseActivas.datos.length > 0) {
+      // Obtener el DTO completo de la primera tienda activa
+      const primeraTienda = responseActivas.datos[0];
+      if (primeraTienda.tieId) {
+        const responseCompleta = await apiService.get<Tienda>(API_ENDPOINTS.tiendas.obtener(primeraTienda.tieId));
+        if (responseCompleta.exito && responseCompleta.datos) {
+          return responseCompleta;
+        }
+      }
+      
+      // Si no se puede obtener el DTO completo, retornar el resumen
       return {
         exito: true,
-        datos: response.datos[0],
+        datos: primeraTienda,
       };
     }
     

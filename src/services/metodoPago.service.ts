@@ -23,6 +23,7 @@ export interface MetodoPagoDisponible {
   iconoUrl?: string;
   comisionPorcentaje?: number;
   comisionFija?: number;
+  configuracion?: string;
 }
 
 class MetodoPagoService {

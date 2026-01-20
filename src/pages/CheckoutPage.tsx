@@ -9,6 +9,8 @@ import { getImageUrl } from '../utils/image.utils';
 import { direccionService, type Direccion, type DireccionCreate } from '../services/direccion.service';
 import { metodoPagoService, type MetodoPagoDisponible } from '../services/metodoPago.service';
 import { pedidoService } from '../services/pedido.service';
+import { mercadoPagoService } from '../services/mercadoPago.service';
+import PagoForm from '../components/Checkout/PagoForm';
 
 export default function CheckoutPage() {
   const { carrito, isLoading: carritoLoading } = useCart();
@@ -43,6 +45,8 @@ export default function CheckoutPage() {
   // Método de pago seleccionado
   const [metodoPagoSeleccionado, setMetodoPagoSeleccionado] = useState<string>('');
   const [notasPedido, setNotasPedido] = useState('');
+  const [mostrarFormularioPago, setMostrarFormularioPago] = useState(false);
+  const [pagoConfirmado, setPagoConfirmado] = useState(false);
 
   useEffect(() => {
     if (!isAuthenticated) {
@@ -79,11 +83,14 @@ export default function CheckoutPage() {
       }
 
       if (metodosPagoResponse.exito && metodosPagoResponse.datos) {
+        console.log('Métodos de pago disponibles:', metodosPagoResponse.datos);
         setMetodosPago(metodosPagoResponse.datos);
         // Seleccionar el primer método de pago por defecto
         if (metodosPagoResponse.datos.length > 0) {
           setMetodoPagoSeleccionado(metodosPagoResponse.datos[0].metId);
         }
+      } else {
+        console.error('Error al cargar métodos de pago:', metodosPagoResponse.mensaje);
       }
     } catch (error) {
       Swal.fire({
@@ -153,7 +160,7 @@ export default function CheckoutPage() {
     }
   };
 
-  const handleCrearPedido = async () => {
+  const handleContinuarAlPago = () => {
     // Validaciones
     if (!direccionEnvioSeleccionada) {
       Swal.fire({
@@ -185,6 +192,11 @@ export default function CheckoutPage() {
       return;
     }
 
+    // Mostrar formulario de pago
+    setMostrarFormularioPago(true);
+  };
+
+  const handlePagoConfirmado = async (datosPago: any) => {
     if (!carrito?.carId) {
       Swal.fire({
         icon: 'error',
@@ -214,7 +226,7 @@ export default function CheckoutPage() {
         return;
       }
 
-      // Convertir direcciones al formato requerido (incluir dirId si existe para reutilizar)
+      // Convertir direcciones al formato requerido
       const direccionEnvioDto: DireccionCreate = {
         dirId: direccionEnvio.dirId,
         nombre: direccionEnvio.nombre,
@@ -241,7 +253,7 @@ export default function CheckoutPage() {
         tipo: direccionFacturacion.tipo,
       };
 
-      // Crear pedido
+      // Crear pedido DESPUÉS del pago confirmado
       const response = await pedidoService.crearDesdeCarrito({
         carritoId: carrito.carId,
         metodoPagoId: metodoPagoSeleccionado,
@@ -252,10 +264,18 @@ export default function CheckoutPage() {
       });
 
       if (response.exito && response.datos) {
+        setPagoConfirmado(true);
+        // Limpiar datos temporales si existen
+        localStorage.removeItem('pedidoTemporal');
+        localStorage.removeItem('mercadoPagoInitPoint');
+        
         Swal.fire({
           icon: 'success',
           title: '¡Pedido creado!',
-          text: `Tu pedido #${response.datos.numeroPedido} se ha creado exitosamente`,
+          html: `
+            <p>Tu pedido #${response.datos.numeroPedido} se ha creado exitosamente.</p>
+            <p class="mt-2 text-sm text-gray-600">El pago ha sido procesado correctamente.</p>
+          `,
           confirmButtonText: 'Ver pedido',
           confirmButtonColor: '#2563eb',
         }).then((result) => {
@@ -282,6 +302,7 @@ export default function CheckoutPage() {
       });
     } finally {
       setIsCreatingPedido(false);
+      setMostrarFormularioPago(false);
     }
   };
 
@@ -565,34 +586,55 @@ export default function CheckoutPage() {
               
               {metodosPago.length > 0 ? (
                 <div className="space-y-3">
-                  {metodosPago.map((metodo) => (
-                    <label
-                      key={metodo.metId}
-                      className={`flex items-center gap-3 p-4 border-2 rounded-lg cursor-pointer transition-all ${
-                        metodoPagoSeleccionado === metodo.metId
-                          ? 'border-blue-600 bg-blue-50'
-                          : 'border-gray-200 hover:border-gray-300'
-                      }`}
-                    >
-                      <input
-                        type="radio"
-                        name="metodoPago"
-                        value={metodo.metId}
-                        checked={metodoPagoSeleccionado === metodo.metId}
-                        onChange={(e) => setMetodoPagoSeleccionado(e.target.value)}
-                        className="w-4 h-4 text-blue-600 border-gray-300 focus:ring-blue-500"
-                      />
-                      {metodo.iconoUrl && (
-                        <img src={getImageUrl(metodo.iconoUrl)} alt={metodo.nombre} className="w-8 h-8 object-contain" />
-                      )}
-                      <div className="flex-1">
-                        <div className="font-medium text-gray-900">{metodo.nombre}</div>
-                        {metodo.comisionPorcentaje && (
-                          <div className="text-sm text-gray-500">Comisión: {metodo.comisionPorcentaje}%</div>
-                        )}
-                      </div>
-                    </label>
-                  ))}
+                  {metodosPago.map((metodo) => {
+                    // Detectar Mercado Pago de forma más robusta
+                    const tipoLower = metodo.tipo?.toLowerCase() || '';
+                    const nombreLower = metodo.nombre?.toLowerCase() || '';
+                    const esMercadoPago = tipoLower === 'mercadopago' || 
+                                        tipoLower.includes('mercadopago') ||
+                                        nombreLower.includes('mercado pago') ||
+                                        nombreLower.includes('mercadopago');
+                    
+                    return (
+                      <label
+                        key={metodo.metId}
+                        className={`flex items-center gap-3 p-4 border-2 rounded-lg cursor-pointer transition-all ${
+                          metodoPagoSeleccionado === metodo.metId
+                            ? 'border-blue-600 bg-blue-50'
+                            : 'border-gray-200 hover:border-gray-300'
+                        }`}
+                      >
+                        <input
+                          type="radio"
+                          name="metodoPago"
+                          value={metodo.metId}
+                          checked={metodoPagoSeleccionado === metodo.metId}
+                          onChange={(e) => setMetodoPagoSeleccionado(e.target.value)}
+                          className="w-4 h-4 text-blue-600 border-gray-300 focus:ring-blue-500"
+                        />
+                        {metodo.iconoUrl ? (
+                          <img src={getImageUrl(metodo.iconoUrl)} alt={metodo.nombre} className="w-8 h-8 object-contain" />
+                        ) : esMercadoPago ? (
+                          <div className="w-8 h-8 bg-blue-100 rounded flex items-center justify-center">
+                            <svg className="w-5 h-5 text-blue-600" fill="currentColor" viewBox="0 0 24 24">
+                              <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 18c-4.41 0-8-3.59-8-8s3.59-8 8-8 8 3.59 8 8-3.59 8-8 8zm-1-13h2v6h-2zm0 8h2v2h-2z"/>
+                            </svg>
+                          </div>
+                        ) : null}
+                        <div className="flex-1">
+                          <div className="font-medium text-gray-900">{metodo.nombre}</div>
+                          {metodo.comisionPorcentaje && (
+                            <div className="text-sm text-gray-500">Comisión: {metodo.comisionPorcentaje}%</div>
+                          )}
+                          {esMercadoPago && metodoPagoSeleccionado === metodo.metId && (
+                            <div className="mt-2 p-2 bg-blue-50 rounded text-xs text-blue-700">
+                              <p className="font-medium">Serás redirigido a Mercado Pago para completar el pago de forma segura.</p>
+                            </div>
+                          )}
+                        </div>
+                      </label>
+                    );
+                  })}
                 </div>
               ) : (
                 <p className="text-gray-500 text-sm">No hay métodos de pago disponibles</p>
@@ -608,8 +650,56 @@ export default function CheckoutPage() {
                 placeholder="Instrucciones especiales o comentarios adicionales..."
                 className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 min-h-[100px]"
                 rows={4}
+                disabled={mostrarFormularioPago}
               />
             </div>
+
+            {/* Formulario de Pago */}
+            {mostrarFormularioPago && metodoPagoSeleccionado && (
+              <PagoForm
+                metodoPago={metodosPago.find(m => m.metId === metodoPagoSeleccionado)!}
+                total={carrito?.total || 0}
+                direccionEnvio={direcciones.find(d => d.dirId === direccionEnvioSeleccionada) ? {
+                  dirId: direcciones.find(d => d.dirId === direccionEnvioSeleccionada)!.dirId,
+                  nombre: direcciones.find(d => d.dirId === direccionEnvioSeleccionada)!.nombre,
+                  apellido: direcciones.find(d => d.dirId === direccionEnvioSeleccionada)!.apellido,
+                  calle: direcciones.find(d => d.dirId === direccionEnvioSeleccionada)!.calle,
+                  ciudad: direcciones.find(d => d.dirId === direccionEnvioSeleccionada)!.ciudad,
+                  estado: direcciones.find(d => d.dirId === direccionEnvioSeleccionada)!.estado,
+                  codigoPostal: direcciones.find(d => d.dirId === direccionEnvioSeleccionada)!.codigoPostal,
+                  pais: direcciones.find(d => d.dirId === direccionEnvioSeleccionada)!.pais,
+                  telefono: direcciones.find(d => d.dirId === direccionEnvioSeleccionada)!.telefono,
+                  tipo: direcciones.find(d => d.dirId === direccionEnvioSeleccionada)!.tipo,
+                } : formDireccion}
+                direccionFacturacion={usarMismaDireccion 
+                  ? (direcciones.find(d => d.dirId === direccionEnvioSeleccionada) ? {
+                      dirId: direcciones.find(d => d.dirId === direccionEnvioSeleccionada)!.dirId,
+                      nombre: direcciones.find(d => d.dirId === direccionEnvioSeleccionada)!.nombre,
+                      apellido: direcciones.find(d => d.dirId === direccionEnvioSeleccionada)!.apellido,
+                      calle: direcciones.find(d => d.dirId === direccionEnvioSeleccionada)!.calle,
+                      ciudad: direcciones.find(d => d.dirId === direccionEnvioSeleccionada)!.ciudad,
+                      estado: direcciones.find(d => d.dirId === direccionEnvioSeleccionada)!.estado,
+                      codigoPostal: direcciones.find(d => d.dirId === direccionEnvioSeleccionada)!.codigoPostal,
+                      pais: direcciones.find(d => d.dirId === direccionEnvioSeleccionada)!.pais,
+                      telefono: direcciones.find(d => d.dirId === direccionEnvioSeleccionada)!.telefono,
+                      tipo: direcciones.find(d => d.dirId === direccionEnvioSeleccionada)!.tipo,
+                    } : formDireccion)
+                  : (direcciones.find(d => d.dirId === direccionFacturacionSeleccionada) ? {
+                      dirId: direcciones.find(d => d.dirId === direccionFacturacionSeleccionada)!.dirId,
+                      nombre: direcciones.find(d => d.dirId === direccionFacturacionSeleccionada)!.nombre,
+                      apellido: direcciones.find(d => d.dirId === direccionFacturacionSeleccionada)!.apellido,
+                      calle: direcciones.find(d => d.dirId === direccionFacturacionSeleccionada)!.calle,
+                      ciudad: direcciones.find(d => d.dirId === direccionFacturacionSeleccionada)!.ciudad,
+                      estado: direcciones.find(d => d.dirId === direccionFacturacionSeleccionada)!.estado,
+                      codigoPostal: direcciones.find(d => d.dirId === direccionFacturacionSeleccionada)!.codigoPostal,
+                      pais: direcciones.find(d => d.dirId === direccionFacturacionSeleccionada)!.pais,
+                      telefono: direcciones.find(d => d.dirId === direccionFacturacionSeleccionada)!.telefono,
+                      tipo: direcciones.find(d => d.dirId === direccionFacturacionSeleccionada)!.tipo,
+                    } : formDireccion)}
+                onPagoConfirmado={handlePagoConfirmado}
+                onCancelar={() => setMostrarFormularioPago(false)}
+              />
+            )}
           </div>
 
           {/* Columna derecha - Resumen del Pedido */}
@@ -652,14 +742,22 @@ export default function CheckoutPage() {
                 </div>
               </div>
 
-              <button
-                type="button"
-                onClick={handleCrearPedido}
-                disabled={isCreatingPedido}
-                className="w-full mt-6 px-6 py-3 bg-blue-600 text-white font-medium rounded-lg hover:bg-blue-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-              >
-                {isCreatingPedido ? 'Procesando...' : 'Confirmar Pedido'}
-              </button>
+              {!mostrarFormularioPago ? (
+                <button
+                  type="button"
+                  onClick={handleContinuarAlPago}
+                  disabled={isCreatingPedido}
+                  className="w-full mt-6 px-6 py-3 bg-blue-600 text-white font-medium rounded-lg hover:bg-blue-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  Continuar al Pago
+                </button>
+              ) : (
+                <div className="mt-6 p-4 bg-blue-50 rounded-lg border border-blue-200">
+                  <p className="text-sm text-blue-800 text-center">
+                    Completa el pago en el formulario de abajo
+                  </p>
+                </div>
+              )}
 
               <Link
                 to="/carrito"

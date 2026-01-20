@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Link } from 'react-router';
+import { Link, useNavigate } from 'react-router';
 import Navbar from '../components/Layout/Navbar';
 import Footer from '../components/Layout/Footer';
 import { productoService } from '../services/producto.service';
@@ -18,20 +18,57 @@ import 'slick-carousel/slick/slick.css';
 import 'slick-carousel/slick/slick-theme.css';
 
 export default function Home() {
+  const navigate = useNavigate();
   const [productos, setProductos] = useState<ProductoResumen[]>([]);
   const [categorias, setCategorias] = useState<CategoriaArbol[]>([]);
   const [banners, setBanners] = useState<Banner[]>([]);
   const [bannersPromocion, setBannersPromocion] = useState<Banner[]>([]);
+  const [bannersPopup, setBannersPopup] = useState<Banner[]>([]);
+  const [popupAbierto, setPopupAbierto] = useState(false);
   const [promocionesDestacadas, setPromocionesDestacadas] = useState<PromocionAplicable[]>([]);
   const [tiendaInfo, setTiendaInfo] = useState<{ 
     nombre?: string; 
     email?: string; 
     telefono?: string; 
-    direccion?: string 
+    whatsapp?: string;
+    direccion?: string;
+    ciudad?: string;
+    estado?: string;
+    codigoPostal?: string;
+    pais?: string;
+    nit?: string;
+    razonSocial?: string;
+  } | null>(null);
+  const [configuracion, setConfiguracion] = useState<{
+    redesSociales?: {
+      facebook?: string;
+      instagram?: string;
+      twitter?: string;
+      tiktok?: string;
+      youtube?: string;
+      linkedin?: string;
+      pinterest?: string;
+    };
+    horarios?: {
+      lunesAViernes?: string;
+      sabado?: string;
+      domingo?: string;
+      zonaHoraria?: string;
+    };
+    politicas?: {
+      privacidad?: string;
+      terminos?: string;
+      devoluciones?: string;
+      envios?: string;
+    };
+    branding?: {
+      colorPrimario?: string;
+      colorSecundario?: string;
+      mensajeBienvenida?: string;
+      mensajePromocional?: string;
+    };
   } | null>(null);
   const [isLoading, setIsLoading] = useState(true);
-  const [showFilter, setShowFilter] = useState(false);
-  const [showSearch, setShowSearch] = useState(false);
   const [selectedFilter, setSelectedFilter] = useState('*');
   const [showBackToTop, setShowBackToTop] = useState(false);
   const [promocionesPorProducto, setPromocionesPorProducto] = useState<Map<string, PromocionAplicable>>(new Map());
@@ -52,6 +89,15 @@ export default function Home() {
     return () => window.removeEventListener('scroll', handleScroll);
   }, []);
 
+  // Mostrar popup cada vez que se carga la página (si existe)
+  useEffect(() => {
+    if (bannersPopup && bannersPopup.length > 0) {
+      setPopupAbierto(true);
+    } else {
+      setPopupAbierto(false);
+    }
+  }, [bannersPopup]);
+
   const cargarDatos = async () => {
     try {
       setIsLoading(true);
@@ -60,10 +106,44 @@ export default function Home() {
       const tiendaResponse = await tiendaService.obtenerActual();
       if (tiendaResponse.exito && tiendaResponse.datos) {
         const tiendaId = tiendaResponse.datos.tieId;
+        
+       
         setTiendaInfo({
           nombre: tiendaResponse.datos.nombre,
-          email: tiendaResponse.datos.descripcion,
+          email: tiendaResponse.datos.email,
+          telefono: tiendaResponse.datos.telefono,
+          whatsapp: tiendaResponse.datos.whatsapp,
+          direccion: tiendaResponse.datos.direccion,
+          ciudad: tiendaResponse.datos.ciudad,
+          estado: tiendaResponse.datos.estado,
+          codigoPostal: tiendaResponse.datos.codigoPostal,
+          pais: tiendaResponse.datos.pais,
+          nit: tiendaResponse.datos.nit,
+          razonSocial: tiendaResponse.datos.razonSocial,
         });
+
+        // Parsear configuración JSON si existe
+        const configJson = tiendaResponse.datos.configuracionJson;
+        if (configJson && configJson.trim() !== '') {
+          try {
+            const parsedConfig = JSON.parse(configJson);
+            setConfiguracion({
+              redesSociales: parsedConfig.redesSociales,
+              horarios: parsedConfig.horarios,
+              politicas: parsedConfig.politicas,
+              branding: {
+                ...parsedConfig.branding,
+                mensajePromocional: parsedConfig.branding?.mensajePromocional,
+              },
+            });
+          } catch (e) {
+            // Si hay error al parsear, usar configuración vacía
+            console.error('Error al parsear configuracionJson:', e);
+            setConfiguracion(null);
+          }
+        } else {
+          setConfiguracion(null);
+        }
 
         // Cargar categorías
         const categoriasResponse = await categoriaService.obtenerArbol(tiendaId);
@@ -103,23 +183,45 @@ export default function Home() {
         // Cargar banners (Superior - carousel principal)
         const bannersResponse = await bannerService.listarVigentes();
         let bannersMedioCargados: Banner[] = [];
+        let bannersInferiorCargados: Banner[] = [];
         
         if (bannersResponse.exito && bannersResponse.datos) {
           const bannersOrdenados = bannersResponse.datos.sort((a, b) => a.orden - b.orden);
-          // Separar banners por posición (case-insensitive)
-          const bannersSuperior = bannersOrdenados.filter(b => 
-            !b.posicion || b.posicion.toLowerCase() === 'superior'
-          );
-          bannersMedioCargados = bannersOrdenados.filter(b => 
-            b.posicion && b.posicion.toLowerCase() === 'medio'
-          );
-          setBanners(bannersSuperior);
+          
+          // Debug: ver todos los banners recibidos
+          console.log('Banners recibidos:', bannersOrdenados.map(b => ({
+            id: b.banId,
+            titulo: b.titulo,
+            posicion: b.posicion,
+            orden: b.orden,
+            activo: b.activo
+          })));
+          
+          // Separar banners por posición (case-insensitive + trim)
+          const normalizarPosicion = (pos?: string) => (pos ?? '').trim().toLowerCase();
+          const bannersSuperior = bannersOrdenados.filter(b => {
+            const pos = normalizarPosicion(b.posicion);
+            return !pos || pos === 'superior';
+          });
+          bannersMedioCargados = bannersOrdenados.filter(b => normalizarPosicion(b.posicion) === 'medio');
+          bannersInferiorCargados = bannersOrdenados.filter(b => normalizarPosicion(b.posicion) === 'inferior');
+          const bannersPopupCargados = bannersOrdenados.filter(b => normalizarPosicion(b.posicion) === 'popup');
+
+          // Debug: ver qué banners se filtraron
+          console.log('Banners Superior:', bannersSuperior.length);
+          console.log('Banners Medio:', bannersMedioCargados.length);
+          console.log('Banners Inferior:', bannersInferiorCargados.length);
+          console.log('Banners Popup:', bannersPopupCargados.length);
+
+          // Guardar principal (superior)
+          setBanners([...bannersSuperior, ...bannersInferiorCargados]);
+          setBannersPopup(bannersPopupCargados);
         }
 
-        // Si no se encontraron banners de posición "Medio", intentar cargarlos directamente
+        // Si no se encontraron banners de posición "Medio" en la primera carga, intentar cargarlos directamente
         // Intentar con diferentes variaciones de mayúsculas/minúsculas
         if (bannersMedioCargados.length === 0) {
-          const variacionesPosicion = ['Medio', 'medio', 'MEDIO', 'Medio '];
+          const variacionesPosicion = ['Medio', 'medio', 'MEDIO', 'Medio ', ' medio '];
           for (const posicion of variacionesPosicion) {
             const bannersMedioResponse = await bannerService.obtenerActivosPorPosicion(posicion);
             if (bannersMedioResponse.exito && bannersMedioResponse.datos && bannersMedioResponse.datos.length > 0) {
@@ -129,8 +231,23 @@ export default function Home() {
           }
         }
 
-        // Establecer banners promocionales si se encontraron
-        setBannersPromocion(bannersMedioCargados);
+        // Si no se encontraron banners de posición "Inferior" en la primera carga, intentar cargarlos directamente
+        if (bannersInferiorCargados.length === 0) {
+          const variacionesInferior = ['Inferior', 'inferior', 'INFERIOR', 'Inferior ', ' inferior '];
+          for (const posicion of variacionesInferior) {
+            const bannersInferiorResponse = await bannerService.obtenerActivosPorPosicion(posicion);
+            if (bannersInferiorResponse.exito && bannersInferiorResponse.datos && bannersInferiorResponse.datos.length > 0) {
+              bannersInferiorCargados = bannersInferiorResponse.datos.sort((a, b) => a.orden - b.orden);
+              break;
+            }
+          }
+        }
+
+        // Establecer banners promocionales (medio + inferior) combinados
+        const todosLosBannersPromocion = [...bannersMedioCargados, ...bannersInferiorCargados];
+        if (todosLosBannersPromocion.length > 0) {
+          setBannersPromocion(todosLosBannersPromocion);
+        }
       }
       
       // Cargar promociones activas para mostrar en el espacio promocional (después de cargar productos)
@@ -164,7 +281,13 @@ export default function Home() {
   };
 
   const handleSearch = (query: string) => {
-    // TODO: Implementar búsqueda
+    if (query.trim()) {
+      // Navegar a la página de productos con el parámetro de búsqueda
+      navigate(`/productos?q=${encodeURIComponent(query.trim())}`);
+    } else {
+      // Si no hay búsqueda, navegar a productos sin parámetros
+      navigate('/productos');
+    }
   };
 
   // Configuración del slider
@@ -177,8 +300,14 @@ export default function Home() {
     autoplay: banners.length > 1,
     autoplaySpeed: 5000,
     arrows: true,
-    fade: true,
-    cssEase: 'linear',
+    // Para permitir deslizamiento manual (swipe/drag), evitamos "fade"
+    fade: false,
+    cssEase: 'ease',
+    swipe: true,
+    draggable: true,
+    touchMove: true,
+    pauseOnHover: true,
+    pauseOnDotsHover: true,
     adaptiveHeight: false,
   };
 
@@ -233,7 +362,36 @@ export default function Home() {
         categorias={categorias} 
         onSearch={handleSearch}
         tiendaNombre={tiendaInfo?.nombre}
+        tiendaTelefono={tiendaInfo?.telefono}
+        tiendaWhatsapp={tiendaInfo?.whatsapp}
+        tiendaEmail={tiendaInfo?.email}
+        tiendaCiudad={tiendaInfo?.ciudad}
+        tiendaEstado={tiendaInfo?.estado}
+        configuracion={configuracion}
       />
+
+      {/* Popup Banner */}
+      {popupAbierto && bannersPopup && bannersPopup.length > 0 && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4"
+          onClick={() => setPopupAbierto(false)}
+        >
+          <div
+            className="relative w-full max-w-3xl"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <button
+              type="button"
+              onClick={() => setPopupAbierto(false)}
+              className="absolute -top-3 -right-3 z-[60] w-10 h-10 rounded-full bg-white text-gray-700 shadow-lg hover:bg-gray-100 flex items-center justify-center"
+              aria-label="Cerrar"
+            >
+              ✕
+            </button>
+            <BannerPromocional banner={bannersPopup[0]} className="min-h-[280px] md:min-h-[380px]" />
+          </div>
+        </div>
+      )}
       {/* Slider de Banners */}
       {banners.length > 0 ? (
         <section className="relative w-full overflow-hidden">
@@ -309,6 +467,7 @@ export default function Home() {
           </div>
         </section>
       )}
+
 
       {/* Banner - Categorías */}
       {categoriasPadre.length > 0 && (
@@ -390,16 +549,29 @@ export default function Home() {
         </section>
       )}
       
-      {/* Banner Promocional - Fallback si no hay promociones */}
-      {promocionesDestacadas.length === 0 && bannersPromocion && bannersPromocion.length > 0 && (
-        <section className="py-12 bg-gray-50">
-          <div className="container mx-auto px-4">
+      {/* Banners promocionales adicionales (posición Medio/Inferior) */}
+      {bannersPromocion && bannersPromocion.length > 0 && (
+        <section className="py-12 md:py-16 lg:py-20 bg-white relative overflow-hidden">
+          {/* Fondo decorativo con patrones sutiles */}
+          <div className="absolute inset-0 opacity-5">
+            <div className="absolute top-0 left-0 w-full h-full bg-[radial-gradient(circle_at_50%_50%,rgba(99,102,241,0.1),transparent_50%)]"></div>
+          </div>
+          
+          <div className="container mx-auto px-4 md:px-6 lg:px-8 relative z-10">
             {bannersPromocion.length === 1 ? (
-              <BannerPromocional banner={bannersPromocion[0]} />
+              <div className="max-w-6xl mx-auto">
+                <BannerPromocional banner={bannersPromocion[0]} variant="compact" />
+              </div>
             ) : (
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                {bannersPromocion.map((banner) => (
-                  <BannerPromocional key={banner.banId} banner={banner} />
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-5 md:gap-7 lg:gap-8">
+                {bannersPromocion.map((banner, index) => (
+                  <div 
+                    key={banner.banId} 
+                    className="animate-fade-in-up"
+                    style={{ animationDelay: `${index * 150}ms` }}
+                  >
+                    <BannerPromocional banner={banner} variant="compact" />
+                  </div>
                 ))}
               </div>
             )}
@@ -420,180 +592,41 @@ export default function Home() {
             </p>
           </div>
 
-          {/* Filters and Actions Bar */}
-          <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-6 mb-8">
-            <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-6">
-              {/* Category Filter Pills */}
-              <div className="flex flex-wrap gap-2">
-                <button
-                  className={`px-5 py-2.5 rounded-full text-sm font-medium transition-all duration-200 ${
-                    selectedFilter === '*'
-                      ? 'bg-gradient-to-r from-blue-600 to-blue-700 text-white shadow-md shadow-blue-500/30 scale-105'
-                      : 'bg-gray-50 text-gray-700 hover:bg-gray-100 border border-gray-100'
-                  }`}
-                  onClick={() => setSelectedFilter('*')}
-                >
-                  <span className="flex items-center gap-2">
-                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2V6zM14 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2V6zM4 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2v-2zM14 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2v-2z" />
-                    </svg>
-                    Todos
-                  </span>
-                </button>
-                {categoriasPadre.map((cat) => (
-                  <button
-                    key={cat.catId}
-                    className={`px-5 py-2.5 rounded-full text-sm font-medium transition-all duration-200 ${
-                      selectedFilter === cat.catId 
-                        ? 'bg-gradient-to-r from-blue-600 to-blue-700 text-white shadow-md shadow-blue-500/30 scale-105' 
-                        : 'bg-gray-50 text-gray-700 hover:bg-gray-100 border border-gray-100'
-                    }`}
-                    onClick={() => setSelectedFilter(cat.catId)}
-                  >
-                    {cat.nombre}
-                  </button>
-                ))}
-              </div>
-
-              {/* Action Buttons */}
-              <div className="flex gap-3">
-                <button
-                  onClick={() => setShowFilter(!showFilter)}
-                  className={`px-5 py-2.5 rounded-lg font-medium text-sm transition-all duration-200 flex items-center gap-2 ${
-                    showFilter
-                      ? 'bg-blue-600 text-white shadow-md'
-                      : 'bg-white text-gray-700 border border-gray-200 hover:border-blue-600 hover:text-blue-600 hover:bg-blue-50'
-                  }`}
-                >
-                  {showFilter ? (
-                    <>
-                      <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                      </svg>
-                      Ocultar Filtros
-                    </>
-                  ) : (
-                    <>
-                      <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 4a1 1 0 011-1h16a1 1 0 011 1v2.586a1 1 0 01-.293.707l-6.414 6.414a1 1 0 00-.293.707V17l-4 4v-6.586a1 1 0 00-.293-.707L3.293 7.293A1 1 0 013 6.586V4z" />
-                      </svg>
-                      Filtros
-                    </>
-                  )}
-                </button>
-
-                <button
-                  onClick={() => setShowSearch(!showSearch)}
-                  className={`px-5 py-2.5 rounded-lg font-medium text-sm transition-all duration-200 flex items-center gap-2 ${
-                    showSearch
-                      ? 'bg-blue-600 text-white shadow-md'
-                      : 'bg-white text-gray-700 border border-gray-200 hover:border-blue-600 hover:text-blue-600 hover:bg-blue-50'
-                  }`}
-                >
-                  {showSearch ? (
-                    <>
-                      <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                      </svg>
-                      Ocultar
-                    </>
-                  ) : (
-                    <>
-                      <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
-                      </svg>
-                      Buscar
-                    </>
-                  )}
-                </button>
-              </div>
-            </div>
+          {/* Category Filter Pills */}
+          <div className="flex flex-wrap justify-center gap-3 mb-8">
+            <button
+              className={`px-5 py-2.5 rounded-full text-sm font-medium transition-all duration-200 ${
+                selectedFilter === '*'
+                  ? 'bg-gradient-to-r from-blue-600 to-blue-700 text-white shadow-md shadow-blue-500/30 scale-105'
+                  : 'bg-gray-50 text-gray-700 hover:bg-gray-100 border border-gray-100'
+              }`}
+              onClick={() => setSelectedFilter('*')}
+            >
+              <span className="flex items-center gap-2">
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2V6zM14 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2V6zM4 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2v-2zM14 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2v-2z" />
+                </svg>
+                Todos
+              </span>
+            </button>
+            {categoriasPadre.map((cat) => (
+              <button
+                key={cat.catId}
+                className={`px-5 py-2.5 rounded-full text-sm font-medium transition-all duration-200 ${
+                  selectedFilter === cat.catId 
+                    ? 'bg-gradient-to-r from-blue-600 to-blue-700 text-white shadow-md shadow-blue-500/30 scale-105' 
+                    : 'bg-gray-50 text-gray-700 hover:bg-gray-100 border border-gray-100'
+                }`}
+                onClick={() => setSelectedFilter(cat.catId)}
+              >
+                {cat.nombre}
+              </button>
+            ))}
           </div>
-            
-          {/* Search product */}
-          {showSearch && (
-            <div className="mb-8 animate-in slide-in-from-top-2 duration-300">
-              <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
-                <div className="flex items-center">
-                  <div className="px-5 py-4 text-gray-400">
-                    <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
-                    </svg>
-                  </div>
-                  <input
-                    className="flex-1 px-2 py-4 outline-none text-gray-700 placeholder-gray-400"
-                    type="text"
-                    name="search-product"
-                    placeholder="Buscar productos por nombre, categoría..."
-                  />
-                  <button className="px-6 py-4 bg-blue-600 text-white hover:bg-blue-700 transition-colors font-medium">
-                    Buscar
-                  </button>
-                </div>
-              </div>
-            </div>
-          )}
-
-          {/* Filter Panel */}
-          {showFilter && (
-            <div className="mb-8 bg-white rounded-xl shadow-sm border border-gray-100 p-6 animate-in slide-in-from-top-2 duration-300">
-              <div className="flex items-center justify-between mb-6">
-                <h4 className="text-xl font-bold text-gray-900">Filtros y Ordenamiento</h4>
-                <button
-                  onClick={() => setShowFilter(false)}
-                  className="text-gray-400 hover:text-gray-600 transition-colors"
-                >
-                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                  </svg>
-                </button>
-              </div>
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-                <div>
-                  <h5 className="font-semibold text-gray-900 mb-4 flex items-center gap-2">
-                    <svg className="w-5 h-5 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 4a1 1 0 011-1h16a1 1 0 011 1v2.586a1 1 0 01-.293.707l-6.414 6.414a1 1 0 00-.293.707V17l-4 4v-6.586a1 1 0 00-.293-.707L3.293 7.293A1 1 0 013 6.586V4z" />
-                    </svg>
-                    Ordenar por
-                  </h5>
-                  <ul className="space-y-2.5">
-                    <li>
-                      <a href="#" className="flex items-center gap-2 text-gray-600 hover:text-blue-600 transition-colors py-1.5 px-2 rounded-md hover:bg-blue-50">
-                        <span>Por defecto</span>
-                      </a>
-                    </li>
-                    <li>
-                      <a href="#" className="flex items-center gap-2 text-gray-600 hover:text-blue-600 transition-colors py-1.5 px-2 rounded-md hover:bg-blue-50">
-                        <span>Popularidad</span>
-                      </a>
-                    </li>
-                    <li>
-                      <a href="#" className="flex items-center gap-2 text-blue-600 font-medium py-1.5 px-2 rounded-md bg-blue-50">
-                        <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
-                          <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
-                        </svg>
-                        <span>Novedades</span>
-                      </a>
-                    </li>
-                    <li>
-                      <a href="#" className="flex items-center gap-2 text-gray-600 hover:text-blue-600 transition-colors py-1.5 px-2 rounded-md hover:bg-blue-50">
-                        <span>Precio: Menor a Mayor</span>
-                      </a>
-                    </li>
-                    <li>
-                      <a href="#" className="flex items-center gap-2 text-gray-600 hover:text-blue-600 transition-colors py-1.5 px-2 rounded-md hover:bg-blue-50">
-                        <span>Precio: Mayor a Menor</span>
-                      </a>
-                    </li>
-                  </ul>
-                </div>
-              </div>
-            </div>
-          )}
 
           {/* Products Grid */}
-          <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
-            {productosFiltrados.map((producto) => {
+          <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 mb-8">
+            {productosFiltrados.slice(0, 8).map((producto) => {
               const promocion = promocionesPorProducto.get(producto.proId);
               const precioConDescuento = promocion 
                 ? promocionService.calcularPrecioConDescuento(producto.precioBase, promocion)
@@ -659,14 +692,19 @@ export default function Home() {
             })}
           </div>
 
-          {/* Load more */}
-          {productos.length > 16 && (
-            <div className="flex justify-center mt-12">
-              <button className="px-8 py-3 bg-white text-gray-900 border border-gray-300 rounded-md hover:bg-gray-50 transition-colors font-medium">
-                Cargar Más
-              </button>
-            </div>
-          )}
+          {/* Ver todos los productos */}
+          <div className="flex justify-center mt-8">
+            <Link
+              to="/productos"
+              className="px-8 py-3 bg-gradient-to-r from-blue-600 to-blue-700 text-white rounded-lg hover:from-blue-700 hover:to-blue-800 transition-all duration-200 font-medium shadow-lg hover:shadow-xl transform hover:-translate-y-0.5 flex items-center gap-2"
+              style={{ color: '#ffffff' }}
+            >
+              <span style={{ color: '#ffffff' }}>Ver Todos los Productos</span>
+              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" style={{ color: '#ffffff' }}>
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+              </svg>
+            </Link>
+          </div>
         </div>
       </section>
 
@@ -674,8 +712,14 @@ export default function Home() {
         tiendaNombre={tiendaInfo?.nombre}
         tiendaEmail={tiendaInfo?.email}
         tiendaTelefono={tiendaInfo?.telefono}
+        tiendaWhatsapp={tiendaInfo?.whatsapp}
         tiendaDireccion={tiendaInfo?.direccion}
+        tiendaCiudad={tiendaInfo?.ciudad}
+        tiendaEstado={tiendaInfo?.estado}
+        tiendaCodigoPostal={tiendaInfo?.codigoPostal}
+        tiendaPais={tiendaInfo?.pais}
         categorias={categorias}
+        configuracion={configuracion}
       />
 
       {/* Back to top */}

@@ -123,4 +123,10 @@ export const API_ENDPOINTS = {
     obtenerActivosPorPosicion: (posicion: string) => `/Banner/posicion/${posicion}/activos`,
     incrementarClics: (id: string) => `/Banner/${id}/clic`,
   },
+  
+  // Mercado Pago
+  mercadoPago: {
+    crearPreferencia: '/MercadoPago/crear-preferencia',
+    verificarPago: (paymentId: string) => `/MercadoPago/verificar-pago/${paymentId}`,
+  },
 };

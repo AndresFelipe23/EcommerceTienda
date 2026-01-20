@@ -4,6 +4,7 @@ import { direccionService, type Direccion, type DireccionCreate, type DireccionU
 import { pedidoService, type PedidoResumen } from '../services/pedido.service';
 import { Link, useNavigate } from 'react-router';
 import Navbar from '../components/Layout/Navbar';
+import Swal from 'sweetalert2';
 
 type Tab = 'perfil' | 'direcciones' | 'pedidos' | 'seguridad';
 
@@ -47,19 +48,47 @@ export default function MiCuenta() {
   };
 
   const handleEliminar = async (id: string) => {
-    if (!confirm('¿Estás seguro de que deseas eliminar esta dirección?')) {
+    const result = await Swal.fire({
+      title: '¿Eliminar dirección?',
+      text: '¿Estás seguro de que deseas eliminar esta dirección? Esta acción no se puede deshacer.',
+      icon: 'warning',
+      showCancelButton: true,
+      confirmButtonColor: '#dc2626',
+      cancelButtonColor: '#6b7280',
+      confirmButtonText: 'Sí, eliminar',
+      cancelButtonText: 'Cancelar',
+      reverseButtons: true
+    });
+
+    if (!result.isConfirmed) {
       return;
     }
 
     try {
       const response = await direccionService.eliminar(id);
       if (response.exito) {
+        await Swal.fire({
+          icon: 'success',
+          title: 'Dirección eliminada',
+          text: 'La dirección se ha eliminado correctamente.',
+          confirmButtonColor: '#2563eb'
+        });
         await cargarDirecciones();
       } else {
-        alert(response.mensaje || 'Error al eliminar dirección');
+        await Swal.fire({
+          icon: 'error',
+          title: 'Error',
+          text: response.mensaje || 'Error al eliminar dirección',
+          confirmButtonColor: '#2563eb'
+        });
       }
     } catch (err) {
-      alert(err instanceof Error ? err.message : 'Error desconocido');
+      await Swal.fire({
+        icon: 'error',
+        title: 'Error',
+        text: err instanceof Error ? err.message : 'Error desconocido',
+        confirmButtonColor: '#2563eb'
+      });
     }
   };
 

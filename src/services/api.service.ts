@@ -92,6 +92,10 @@ class ApiService {
         if (key === 'CategoriaPadre') {
           camelKey = 'categoriaPadre';
         }
+        // Caso especial: ConfiguracionJson -> configuracionJson
+        if (key === 'ConfiguracionJson') {
+          camelKey = 'configuracionJson';
+        }
         
         const convertedValue = this.convertToCamelCase(obj[key]);
         
